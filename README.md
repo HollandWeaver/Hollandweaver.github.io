@@ -1,2 +1,2 @@
 # Hollandweaver.github.io
-Bartender reference
+Bartender reference page for specs, builds, and garnishes. 
