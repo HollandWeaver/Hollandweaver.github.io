@@ -351,6 +351,26 @@ html[data-theme="dark"] .sv-evening{color:#a49cc4;border-color:#4a4560}
 .flash.slide-l{animation:specInL .18s ease-out}
 .flash.slide-r{animation:specInR .18s ease-out}
 @media (prefers-reduced-motion:reduce){.flash.slide-l,.flash.slide-r{animation:none}}
+/* Cocktail flashcards: the drink's own colour runs along the top edge, and the back
+   is the Cocktails-tab card as it reads opened. */
+.flash.flash-accented{border-top:4px solid var(--flash-accent,var(--border))}
+.flash-front .card-title-cell{gap:10px}
+.flash-front .card-name{font-size:22px;line-height:1.25}
+.flash-front .dot{width:12px;height:12px;margin-top:0}
+.flash-front .flash-menu{font-size:17px;line-height:1.5;margin:0}
+.flash-back.flash-back-swap{border-top:none;padding-top:0}
+.flash-back .flash-card{font-size:15px;line-height:1.6}
+.flash-back .flash-card .card-name{font-size:18px}
+.flash-back .flash-card .spec{margin-left:1rem}
+.flash-back .flash-card .detail{margin-top:12px}
+.flash-back .flash-card .detail ol{padding-left:18px;margin:0}
+.flash-answer{font-size:14px;color:var(--muted);margin:0 0 12px;padding:8px 12px;background:var(--detail-bg);border-radius:8px}
+.flash-answer b{color:var(--text);font-size:16px}
+.riff-list{display:flex;flex-direction:column;gap:2px}
+.riff-row{display:flex;align-items:center;justify-content:space-between;gap:8px;padding:6px 0 2px;border-top:1px dotted var(--border)}
+.riff-row:first-child{border-top:none}
+.riff-row .card-name{font-size:15px}
+.riff-list .menu-line{margin:0 0 4px 16px}
 .study-empty{padding:28px 16px;text-align:center;color:var(--hint);font-size:13px}
 </style>
 </head>
@@ -3342,7 +3362,6 @@ function showSortControl(on){
   }
 }
 var shotFilter="all";
-var wineFilter="all";
 // Filters for the previously filter-less tabs. Syrups/Infusions use a flavour-category
 // axis (plus base spirit on infusions); Batches and Shots borrow the cocktail vocabulary
 // (spirit / liqueur / taste) since they are just specs at a different scale.
@@ -3350,7 +3369,8 @@ var syrupFCFilter="all";
 var infFCFilter="all";var infBaseFilter="all";var infKindFilter="all";
 var batchSpiritFilter="all";var batchLiqFilter="all";var batchTasteFilter="all";
 var shotSpiritFilter="all";var shotLiqFilter="all";var shotTasteFilter="all";
-var wineVarietalFilter="all";var wineBodyFilter="all";var wineTanninFilter="all";var wineSweetFilter="all";var wineAcidFilter="all";var wineAreaFilter="all";var wineClassFilter="all";var wineVenueFilter="all";
+var WINE_F_BLANK={type:"all",grape:"all",area:"all",cls:"all",body:"all",tannin:"all",acid:"all",sweet:"all",menu:"all"};
+var WINE_F=Object.assign({},WINE_F_BLANK);
 // Standard wine scales. Tannin is meaningless on whites and sake, so it only renders
 // where the data carries it. Dryness and sweetness are one axis, not two.
 var WINE_BODY_ORDER=["Light","Light-Medium","Medium","Medium-Full","Full"];
@@ -3361,6 +3381,48 @@ var WINE_ACID_ORDER=["Low","Medium-Low","Medium","Medium-High","High"];
 // Broad region for filtering: the second-to-last part of the display region ("Meursault, Burgundy, France" -> Burgundy).
 function wineArea(w){var p=String(w.region||"").split(",").map(function(s){return s.trim();}).filter(Boolean);if(p.length>=2)return p[p.length-2];return (p[0]&&p[0]!==w.country)?p[0]:"";}
 function wineGrapes(w){return String(w.varietal||"").split(" / ").map(function(s){return s.trim();}).filter(Boolean);}
+// Classification mixes two regional systems. Burgundy and Champagne rank vineyards
+// Grand Cru (top) then Premier Cru (written "1er Cru"); Cru Classé is Bordeaux's
+// ranked-château system. Ordered by prestige, with 1er spelled out so it reads.
+var WINE_CLASS_ORDER=["Grand Cru","1er Cru","Cru Classé"];
+var WINE_CLASS_LABELS={"1er Cru":"Premier Cru (1er)"};
+// ---- Wine filters, shared by the Wines tab and the Study tab ----------------------
+// Same pattern as the cocktail filters: one definition list, so the two tabs can't
+// drift apart. Each def: [state key, element id, label, value getter, order, labels].
+function wineFilterDefs(){return [
+  ["type","fw","Type",function(w){return w.type;},null,WINE_TYPE_LABELS],
+  ["grape","fwv","Varietal",wineGrapes],
+  ["area","fwa","Region",wineArea],
+  ["cls","fwc","Classification",function(w){return w.classification;},WINE_CLASS_ORDER,WINE_CLASS_LABELS],
+  ["body","fwb","Body",function(w){return w.body;},WINE_BODY_ORDER],
+  ["tannin","fwt","Tannin",function(w){return w.tannin;},WINE_TANNIN_ORDER],
+  ["acid","fwac","Acid",function(w){return w.acid;},WINE_ACID_ORDER],
+  ["sweet","fws","Sweetness",function(w){return w.sweet;},WINE_SWEET_ORDER],
+  ["menu","fwve","Menu",function(w){return w.venue;}]
+];}
+function wineVals(v){return Array.isArray(v)?v:(v?[v]:[]);}
+function wineFilterHTML(px,state){
+  return wineFilterDefs().map(function(d){
+    var vals=[];
+    WINE.forEach(function(w){wineVals(d[3](w)).forEach(function(v){if(v&&vals.indexOf(v)===-1)vals.push(v);});});
+    if(d[4])vals.sort(function(a,b){return d[4].indexOf(a)-d[4].indexOf(b);});else vals.sort();
+    if(!vals.length)return "";
+    return selHTML(px+d[1],d[2],vals,state[d[0]],d[5]);
+  }).join("");
+}
+function wireWineFilters(px,state){
+  wineFilterDefs().forEach(function(d){
+    var e=document.getElementById(px+d[1]);if(!e)return;
+    e.value=state[d[0]];
+    e.onchange=function(){state[d[0]]=this.value;render();};
+  });
+}
+function applyWineFilters(items,state){
+  var defs=wineFilterDefs();
+  return items.filter(function(w){
+    return defs.every(function(d){var want=state[d[0]];return !want||want==="all"||wineVals(d[3](w)).indexOf(want)!==-1;});
+  });
+}
 // Collect the distinct values a field actually holds, so a dropdown never offers a
 // dead option. ORDER, when given, keeps a scale in sense order rather than alphabetical.
 function distinctVals(arr,field,ORDER){
@@ -3592,41 +3654,9 @@ function buildFilters(){
   }
   if(curCategory==="wines"){
     SEARCH_TAIL="wines, sake, varietals, producers…";
-    // Standard wine terminology: Type · Varietal · Body · Tannin · Sweetness.
-    // Every dropdown is generated from the data, so a scale that nothing carries yet
-    // simply doesn't render rather than offering options that match zero bottles.
-    var wTypes=distinctVals(WINE,"type");
-    var wVars=[];WINE.forEach(function(w){wineGrapes(w).forEach(function(g){if(wVars.indexOf(g)===-1)wVars.push(g);});});wVars.sort();
-    var wAreas=[];WINE.forEach(function(w){var a=wineArea(w);if(a&&wAreas.indexOf(a)===-1)wAreas.push(a);});wAreas.sort();
-    var wClass=distinctVals(WINE,"classification");
-    var wBody=distinctVals(WINE,"body",WINE_BODY_ORDER);
-    var wTan=distinctVals(WINE,"tannin",WINE_TANNIN_ORDER);
-    var wAcid=distinctVals(WINE,"acid",WINE_ACID_ORDER);
-    var wSweet=distinctVals(WINE,"sweet",WINE_SWEET_ORDER);
-    var wVenue=distinctVals(WINE,"venue");
-    var html='<div class="filter-grid filter-grid-6">';
-    if(wTypes.length)html+=selHTML("fw","Type",wTypes,wineFilter,WINE_TYPE_LABELS);
-    if(wVars.length)html+=selHTML("fwv","Varietal",wVars,wineVarietalFilter);
-    if(wAreas.length)html+=selHTML("fwa","Region",wAreas,wineAreaFilter);
-    if(wClass.length)html+=selHTML("fwc","Classification",wClass,wineClassFilter);
-    if(wBody.length)html+=selHTML("fwb","Body",wBody,wineBodyFilter);
-    if(wTan.length)html+=selHTML("fwt","Tannin",wTan,wineTanninFilter);
-    if(wAcid.length)html+=selHTML("fwac","Acid",wAcid,wineAcidFilter);
-    if(wSweet.length)html+=selHTML("fws","Sweetness",wSweet,wineSweetFilter);
-    if(wVenue.length)html+=selHTML("fwve","Venue",wVenue,wineVenueFilter);
-    html+='</div><div class="cnt" id="cnt"></div>';
-    el.innerHTML=html;
-    var wmap=[["fw",wineFilter],["fwv",wineVarietalFilter],["fwa",wineAreaFilter],["fwc",wineClassFilter],["fwb",wineBodyFilter],["fwt",wineTanninFilter],["fwac",wineAcidFilter],["fws",wineSweetFilter],["fwve",wineVenueFilter]];
-    wmap.forEach(function(pair){var e=document.getElementById(pair[0]);if(e)e.value=pair[1];});
-    wireSel("fw",function(v){wineFilter=v;});
-    wireSel("fwv",function(v){wineVarietalFilter=v;});
-    wireSel("fwa",function(v){wineAreaFilter=v;});
-    wireSel("fwc",function(v){wineClassFilter=v;});
-    wireSel("fwb",function(v){wineBodyFilter=v;});
-    wireSel("fwt",function(v){wineTanninFilter=v;});
-    wireSel("fwac",function(v){wineAcidFilter=v;});
-    wireSel("fws",function(v){wineSweetFilter=v;});
-    wireSel("fwve",function(v){wineVenueFilter=v;});
+    // Built from the shared wine filter list, so the Study tab offers exactly these.
+    el.innerHTML='<div class="filter-grid filter-grid-6">'+wineFilterHTML("",WINE_F)+'</div><div class="cnt" id="cnt"></div>';
+    wireWineFilters("",WINE_F);
     return;
   }
   if(curCategory==="spirits"){
@@ -3850,15 +3880,7 @@ function render(){
   }
   if(curCategory==="wines"){
     var items=WINE.slice();
-    if(wineFilter!=="all")items=items.filter(function(w){return w.type===wineFilter;});
-    if(wineVarietalFilter!=="all")items=items.filter(function(w){return wineGrapes(w).indexOf(wineVarietalFilter)!==-1;});
-    if(wineAreaFilter!=="all")items=items.filter(function(w){return wineArea(w)===wineAreaFilter;});
-    if(wineClassFilter!=="all")items=items.filter(function(w){return w.classification===wineClassFilter;});
-    if(wineAcidFilter!=="all")items=items.filter(function(w){return w.acid===wineAcidFilter;});
-    if(wineVenueFilter!=="all")items=items.filter(function(w){return w.venue===wineVenueFilter;});
-    if(wineBodyFilter!=="all")items=items.filter(function(w){return w.body===wineBodyFilter;});
-    if(wineTanninFilter!=="all")items=items.filter(function(w){return w.tannin===wineTanninFilter;});
-    if(wineSweetFilter!=="all")items=items.filter(function(w){return w.sweet===wineSweetFilter;});
+    items=applyWineFilters(items,WINE_F);
     if(searchQuery){var q=searchQuery.toLowerCase();items=items.filter(function(w){var hay=[w.n,w.style,w.notes,w.varietal,w.region,w.producer,w.terroir,w.oak,w.elevation,w.vintage,w.appellation,w.classification,w.venue,w.bin,(w.pairs||[]).join(" ")].filter(Boolean).join(" ").toLowerCase();return hay.indexOf(q)!==-1;});}
     setCount(items.length+" wines");
     if(items.length===0){grid.appendChild(emptyState("No wines on file yet."));return;}
@@ -4136,34 +4158,11 @@ function runValidator(){
 // Basic flashcards. Pick a source and a card type, narrow the deck with the same
 // AND-logic filters the browse tabs use, then flip through. Card types whose answer
 // field is empty for a given item simply skip that item, so a blank never shows.
-var STUDY={src:"wines",mode:"w-id",f:{},cf:{build:"all",spirit:"all",liqueur:"all",profile:"all",style:"all",menu:"all"},order:null,sig:"",i:0,open:false,list:false};
+var STUDY={src:"cocktails",mode:"c-spec",f:Object.assign({},WINE_F_BLANK),cf:{build:"all",spirit:"all",liqueur:"all",profile:"all",style:"all",menu:"all"},order:null,sig:"",i:0,open:false,list:false};
 var STUDY_MODES={
   wines:[["w-id","Grape & region"],["w-profile","Profile"],["w-pairs","Pairings"],["w-reverse","Name the bottle"],["w-dish","Dish \u2192 wines"]],
   cocktails:[["c-spec","Spec"],["c-menu","Menu \u2192 name"],["c-riff","Riff \u2192 classic"],["c-classic","Classic \u2192 riffs"]]
 };
-function priceBand(w){
-  var m=String(w.price||"").match(/Bottle \$(\d+)/);if(!m)return "";
-  var p=+m[1];return p<100?"Under $100":p<200?"$100–199":p<500?"$200–499":"$500+";
-}
-var PRICE_BANDS=["Under $100","$100–199","$200–499","$500+"];
-var STUDY_WINE_FACETS=[
-  ["type","Type",function(w){return w.type;},null,WINE_TYPE_LABELS],
-  ["grape","Varietal",function(w){return wineGrapes(w);}],
-  ["country","Country",function(w){return w.country;}],
-  ["area","Region",function(w){return wineArea(w);}],
-  ["app","Appellation",function(w){return w.appellation;}],
-  ["cls","Classification",function(w){return w.classification;}],
-  ["body","Body",function(w){return w.body;},WINE_BODY_ORDER],
-  ["sweet","Sweetness",function(w){return w.sweet;},WINE_SWEET_ORDER],
-  ["tannin","Tannin",function(w){return w.tannin;},WINE_TANNIN_ORDER],
-  ["acid","Acid",function(w){return w.acid;},WINE_ACID_ORDER],
-  ["price","Price",priceBand,PRICE_BANDS],
-  ["glass","By the glass",function(w){return /glass/i.test(w.service||"")?"Yes":"No";}],
-  ["venue","Venue",function(w){return w.venue;}]
-];
-function studyFacets(){return STUDY_WINE_FACETS;}
-function studyPool(){return STUDY.src==="wines"?WINE:C;}
-function facetVals(v){return Array.isArray(v)?v:(v?[v]:[]);}
 function studyFiltered(){
   if(STUDY.src==="cocktails"){
     // Same filters and same search as the Cocktails tab.
@@ -4171,13 +4170,7 @@ function studyFiltered(){
     if(searchQuery)cs=cs.filter(function(x){return searchMatch(x,searchQuery).match;});
     return cs;
   }
-  var facets=studyFacets();
-  var items=WINE.filter(function(x){
-    return facets.every(function(f){
-      var want=STUDY.f[f[0]];if(!want||want==="all")return true;
-      return facetVals(f[2](x)).indexOf(want)!==-1;
-    });
-  });
+  var items=applyWineFilters(WINE.slice(),STUDY.f);
   if(searchQuery){
     var q=searchQuery.toLowerCase();
     items=items.filter(function(x){return JSON.stringify(x).toLowerCase().indexOf(q)!==-1;});
@@ -4191,6 +4184,16 @@ function rowsHTML(rows){
   }).join("");
 }
 function listHTML(arr){return '<ul>'+arr.map(function(a){return '<li>'+a+'</li>';}).join("")+'</ul>';}
+// Cocktail flashcards borrow the Cocktails tab card. Front: the drink's dot and name.
+// Back: the card exactly as it reads opened in Cocktails (head badges, spec, garnish,
+// build steps, notes, tags).
+function studyNameHTML(x){return '<div class="card-title-cell"><div class="dot" style="background:'+x.cl+'"></div><span class="card-name">'+x.n+'</span></div>';}
+function studyCardHTML(y){
+  return '<div class="flash-card'+(y.venue==="77 Alley"?' house-card':'')+'">'+cocktailHeadHTML(y)
+    +'<div class="spec">'+cocktailSpecHTML(y)+'</div>'
+    +'<div class="detail open">'+buildDetailHTML(y)+'</div></div>';
+}
+function studyView(x){var vl=specVariants(x),v=vl[defaultVariant(vl,activeVenue(STUDY.cf.menu),null)];return {list:vl,v:v,y:variantView(x,v)};}
 // Every card is {kind, front, back}. Returns [] when an item can't support the card type.
 function studyCards(items){
   var m=STUDY.mode,out=[];
@@ -4204,9 +4207,15 @@ function studyCards(items){
   }
   if(m==="c-classic"){
     var byClassic={};
-    items.forEach(function(x){if(x.riffOf)(byClassic[x.riffOf]=byClassic[x.riffOf]||[]).push(x.n+(x.venue?' <span style="color:var(--hint)">('+x.venue+')</span>':''));});
+    items.forEach(function(x){if(x.riffOf)(byClassic[x.riffOf]=byClassic[x.riffOf]||[]).push(x);});
+    var byName={};C.forEach(function(x){byName[x.n]=x;});
     Object.keys(byClassic).sort().forEach(function(k){
-      out.push({kind:"Which drinks riff on this classic?",front:k,back:listHTML(byClassic[k])});
+      var cls=byName[k];
+      out.push({kind:"Which drinks riff on this classic?",accent:cls&&cls.cl,front:cls?studyNameHTML(cls):k,
+        back:'<div class="riff-list">'+byClassic[k].map(function(x){
+          return '<div class="riff-row">'+studyNameHTML(x)+(x.venue?venueBadge(x.venue):'')+'</div>'
+            +(x.menuText?'<p class="menu-line">'+x.menuText+'</p>':'');
+        }).join("")+'</div>'});
     });
     return out;
   }
@@ -4225,36 +4234,30 @@ function studyCards(items){
       var clues=[WINE_TYPE_LABELS[x.type]||x.type,x.varietal,x.appellation||wineArea(x),x.classification,x.vintage,x.body&&x.body+" body",x.acid&&x.acid+" acid",x.venue].filter(Boolean).join(" · ");
       out.push({kind:"Name the bottle",front:clues,back:'<b>'+x.n+'</b>'+rowsHTML([["Price",x.price]])});
     } else if(m==="c-spec"){
-      var _vl=specVariants(x),_v=_vl[defaultVariant(_vl,activeVenue(STUDY.cf.menu),null)],y=variantView(x,_v);
-      if(!y.sp||!y.sp.length)return;
-      out.push({kind:"Spec"+(_vl.length>1?" · "+_v.tab:""),front:x.n,back:listHTML(y.sp)+rowsHTML([["Glass",y.glass],["Garnish",y.garnish],["Build",y.c]])});
+      var sv=studyView(x);
+      if(!sv.y.sp||!sv.y.sp.length)return;
+      out.push({kind:"Spec"+(sv.list.length>1?" · "+(TAB_SHORT[sv.v.tab]||sv.v.tab):""),accent:x.cl,swap:true,front:studyNameHTML(x),back:studyCardHTML(sv.y)});
     } else if(m==="c-menu"){
       if(!x.menuText)return;
-      out.push({kind:"Name the drink",front:x.menuText,back:'<b>'+x.n+'</b>'+rowsHTML([["Venue",x.venue],["Riff on",x.riffOf]])});
+      out.push({kind:"Name the drink",accent:x.cl,front:'<p class="menu-line flash-menu">'+x.menuText+'</p>',back:studyCardHTML(studyView(x).y)});
     } else if(m==="c-riff"){
       if(!x.riffOf)return;
-      out.push({kind:"Riff on which classic?",front:x.n,back:'<b>'+x.riffOf+'</b>'+(x.menuText?'<p class="menu-line">'+x.menuText+'</p>':'')});
+      out.push({kind:"Riff on which classic?",accent:x.cl,swap:true,front:studyNameHTML(x),
+        back:'<p class="flash-answer">Riff on <b>'+x.riffOf+'</b></p>'+studyCardHTML(studyView(x).y)});
     }
   });
   return out;
 }
 function buildStudyFilters(el){
   var srcSel='<div class="filter-pair"><select id="st-src" aria-label="Study">'
-    +[["wines","Study: Wines"],["cocktails","Study: Cocktails"]].map(function(s){return '<option value="'+s[0]+'">'+s[1]+'</option>';}).join("")+'</select></div>';
+    +[["cocktails","Cocktails"],["wines","Wines"]].map(function(s){return '<option value="'+s[0]+'">'+s[1]+'</option>';}).join("")+'</select></div>';
   var modeSel='<div class="filter-pair"><select id="st-mode" aria-label="Cards">'
     +STUDY_MODES[STUDY.src].map(function(md){return '<option value="'+md[0]+'">Cards: '+md[1]+'</option>';}).join("")+'</select></div>';
   var facetHTML;
   if(STUDY.src==="cocktails"){
     facetHTML=cocktailFilterHTML("st-");
   } else {
-    var pool=WINE;
-    facetHTML=studyFacets().map(function(f){
-      var vals=[];
-      pool.forEach(function(x){facetVals(f[2](x)).forEach(function(v){if(v&&vals.indexOf(v)===-1)vals.push(v);});});
-      if(f[3])vals.sort(function(a,b){return f[3].indexOf(a)-f[3].indexOf(b);});else vals.sort();
-      if(!vals.length)return "";
-      return selHTML("st-"+f[0],f[1],vals,STUDY.f[f[0]]||"all",f[4]);
-    }).join("");
+    facetHTML=wineFilterHTML("st-",STUDY.f);
   }
   el.innerHTML='<div class="filter-grid study-top">'+srcSel+modeSel+'</div>'
     +'<div class="filter-grid filter-grid-6">'+facetHTML+'</div><div class="cnt" id="cnt"></div>';
@@ -4263,17 +4266,15 @@ function buildStudyFilters(el){
   var m=document.getElementById("st-mode");m.value=STUDY.mode;
   m.onchange=function(){STUDY.mode=this.value;render();};
   if(STUDY.src==="cocktails"){wireCocktailFilters("st-",STUDY.cf);return;}
-  studyFacets().forEach(function(f){
-    var e=document.getElementById("st-"+f[0]);if(!e)return;
-    e.value=STUDY.f[f[0]]||"all";
-    e.onchange=function(){STUDY.f[f[0]]=this.value;render();};
-  });
+  wireWineFilters("st-",STUDY.f);
 }
 function shuffled(n){var a=[];for(var i=0;i<n;i++)a.push(i);for(var j=n-1;j>0;j--){var k=Math.floor(Math.random()*(j+1));var t=a[j];a[j]=a[k];a[k]=t;}return a;}
 function flashHTML(card,open){
-  return '<div class="flash-kind">'+card.kind+'</div><div class="flash-front">'+card.front+'</div>'
-    +(open?'<div class="flash-back">'+card.back+'</div>':'<div class="flash-hint">Tap to reveal</div>');
+  var front=(open&&card.swap)?'':'<div class="flash-front">'+card.front+'</div>';
+  return '<div class="flash-kind">'+card.kind+'</div>'+front
+    +(open?'<div class="flash-back'+(card.swap?' flash-back-swap':'')+'">'+card.back+'</div>':'<div class="flash-hint">Tap to reveal</div>');
 }
+function flashAccent(card){return card.accent?' style="--flash-accent:'+card.accent+'"':'';}
 function renderStudy(grid){
   var cards=studyCards(studyFiltered());
   var sig=STUDY.src+"|"+STUDY.mode+"|"+JSON.stringify(STUDY.src==="cocktails"?STUDY.cf:STUDY.f)+"|"+searchQuery+"|"+cards.length;
@@ -4294,9 +4295,10 @@ function renderStudy(grid){
     +'<button type="button" class="chip" data-act="list" aria-pressed="'+STUDY.list+'">Open everything</button>'
     +'<span class="study-count">'+(STUDY.list?cards.length+" cards":(STUDY.i+1)+" / "+cards.length)+'</span></div>';
   if(STUDY.list){
-    wrap.innerHTML=bar+'<div class="study-list">'+STUDY.order.map(function(ix){return '<div class="flash">'+flashHTML(cards[ix],true)+'</div>';}).join("")+'</div>';
+    wrap.innerHTML=bar+'<div class="study-list">'+STUDY.order.map(function(ix){return '<div class="flash'+(cards[ix].accent?' flash-accented':'')+'"'+flashAccent(cards[ix])+'>'+flashHTML(cards[ix],true)+'</div>';}).join("")+'</div>';
   } else {
-    wrap.innerHTML=bar+'<div class="flash flash-single'+(STUDY.dir?' slide-'+STUDY.dir:'')+'" data-act="flip" role="button" tabindex="0">'+flashHTML(cards[STUDY.order[STUDY.i]],STUDY.open)+'</div>';
+    var _cur=cards[STUDY.order[STUDY.i]];
+    wrap.innerHTML=bar+'<div class="flash flash-single'+(_cur.accent?' flash-accented':'')+(STUDY.dir?' slide-'+STUDY.dir:'')+'"'+flashAccent(_cur)+' data-act="flip" role="button" tabindex="0">'+flashHTML(_cur,STUDY.open)+'</div>';
     // Swipe the card sideways for next / previous, same as the buttons: left = next, right = previous.
     // A tap still flips it; vertical scrolling is left to the browser.
     var fc=wrap.querySelector(".flash"),fx=null,fy=0;
@@ -4436,6 +4438,39 @@ function buildDetailHTML(item){
   return detailHTML;
 }
 
+// How a build method reads on a card. "built" alone is shop shorthand; spell it out.
+var BUILD_LABELS={shaken:"Shaken",stirred:"Stirred",built:"Built in glass",blended:"Blended"};
+function buildLabel(c){return BUILD_LABELS[c]||(c?c.charAt(0).toUpperCase()+c.slice(1):"");}
+// Collapsed cocktail card head and spec lines. Shared by the Cocktails tab and the
+// Study tab, so a revealed flashcard is the same card you'd open in Cocktails.
+// Head is a true 2x2 grid, so the second row lines up across both columns:
+//   [ dot + title        ]   [ style / CLASSIC ]
+//   [ glass build garnish ]   [ taste           ]
+// Drinks that are their own thing have no style bucket; if they're also flagged
+// essential the top-right slot reads CLASSIC instead of sitting empty.
+function cocktailHeadHTML(v){
+  var styleInfo=resolveStyleBadge(v);
+  var topRight=styleInfo?'<span class="badge badge-style-fill">'+styleInfo.label+'</span>'
+              : (v.essential?'<span class="badge badge-classic-fill">Classic</span>':'');
+  var tasteCell=v.tst?'<span class="badge badge-taste-fill-'+v.tst+'">'+(TASTE_LABELS[v.tst]||v.tst)+'</span>':'';
+  var under=v.c?'<span class="badge badge-build-fill">'+buildLabel(v.c)+'</span>':'';
+  if(v.glass)under='<span class="badge badge-glass-fill">'+shortGlass(v.glass)+'</span>'+under;
+  return '<div class="card-head card-head-split">'
+    +'<div class="card-title-cell"><div class="dot" style="background:'+v.cl+'"></div><span class="card-name">'+v.n+'</span></div>'
+    +'<div class="cell-style">'+topRight+'</div>'
+    +'<div class="badges-under">'+under+'</div>'
+    +'<div class="cell-taste">'+tasteCell+'</div></div>';
+}
+// Glass and build are badges on the card head; garnish gets its own line at the
+// foot of the ingredient list. Venue specs whose garnish isn't published carry an
+// empty garnish: show nothing rather than "No Garnish".
+function cocktailSpecHTML(v){
+  var venueSpec=v._variant?v._variant.venue:v.venue;
+  var garnishHTML=(v.garnish===""&&venueSpec)?'':'<div class="spec-garnish">'+garnishBadges(v.garnish)+'</div>';
+  var spHTML=(Array.isArray(v.sp)?v.sp.join('<br>'):v.sp);
+  if(!spHTML&&v.menuText)spHTML='<span class="menu-line">'+v.menuText+'</span>';
+  return spHTML+garnishHTML;
+}
 var VENUE_BADGE={"77 Alley":"badge badge-house","Heritage Grand Bakery":"badge badge-src badge-src-hg","Grand Brasserie":"badge badge-src badge-src-gb"};
 function venueBadge(v){return '<span class="'+(VENUE_BADGE[v]||"badge badge-src")+'">'+v+'</span>';}
 function makeCard(item,type,isRootHL,subMatchInfo,hits){
@@ -4451,24 +4486,9 @@ function makeCard(item,type,isRootHL,subMatchInfo,hits){
     card.classList.add("has-variants");
   }
   function viewNow(){return variants.length>1?variantView(item,variants[vi]):item;}
-  // Collapsed card head is a true 2x2 grid, so the second row lines up across both columns:
-  //   [ dot + title        ]   [ style / CLASSIC ]
-  //   [ glass build garnish ]   [ taste           ]
-  // Drinks that are their own thing have no style bucket; if they're also flagged
-  // essential the top-right slot reads CLASSIC instead of sitting empty.
   function headFor(v){
     if(type==="cocktail"){
-      var styleInfo=resolveStyleBadge(v);
-      var topRight=styleInfo?'<span class="badge badge-style-fill">'+styleInfo.label+'</span>'
-                  : (v.essential?'<span class="badge badge-classic-fill">Classic</span>':'');
-      var tasteCell=v.tst?'<span class="badge badge-taste-fill-'+v.tst+'">'+(TASTE_LABELS[v.tst]||v.tst)+'</span>':'';
-      var under=v.c?'<span class="badge badge-build-fill">'+v.c+'</span>':'';
-      if(v.glass)under='<span class="badge badge-glass-fill">'+shortGlass(v.glass)+'</span>'+under;
-      return '<div class="card-head card-head-split">'
-        +'<div class="card-title-cell"><div class="dot" style="background:'+v.cl+'"></div><span class="card-name">'+v.n+'</span></div>'
-        +'<div class="cell-style">'+topRight+'</div>'
-        +'<div class="badges-under">'+under+'</div>'
-        +'<div class="cell-taste">'+tasteCell+'</div></div>';
+      return cocktailHeadHTML(v);
     } else if(type==="shot"){
       // Shots are mini cocktails, so they get the same 2x2 head: method badge under the
       // title, taste in the bottom-right slot.
@@ -4496,16 +4516,7 @@ function makeCard(item,type,isRootHL,subMatchInfo,hits){
     hits.slice(0,4).forEach(function(h){hitsHTML+='<span class="search-hit">'+h+'</span>';});
     hitsHTML+='</div>';
   }
-  function specFor(v){
-    // Glass and build are badges on the card head; garnish gets its own line at the
-    // foot of the ingredient list, where the plain-text version used to sit.
-    // Venue specs whose garnish isn't published carry an empty garnish: show nothing rather than "No Garnish".
-    var venueSpec=v._variant?v._variant.venue:v.venue;
-    var garnishHTML=(v.garnish===""&&venueSpec)?'':'<div class="spec-garnish">'+garnishBadges(v.garnish)+'</div>';
-    var spHTML=(Array.isArray(v.sp)?v.sp.join('<br>'):v.sp);
-    if(!spHTML&&v.menuText)spHTML='<span class="menu-line">'+v.menuText+'</span>';
-    return spHTML+garnishHTML+subMatchHTML+hitsHTML;
-  }
+  function specFor(v){return cocktailSpecHTML(v)+subMatchHTML+hitsHTML;}
   function paint(dir){
     var d=card.querySelector(".detail");
     var wasOpen=!!(d&&d.classList.contains("open"));
@@ -5012,7 +5023,7 @@ function makeBatchCard(item){
 document.getElementById("category-select").addEventListener("change",function(){
   curCategory=this.value;
   filters={build:"all",spirit:"all",liqueur:"all",profile:"all",style:"all",menu:"all"};
-  shotFilter="all";wineFilter="all";syrupFCFilter="all";infFCFilter="all";infBaseFilter="all";infKindFilter="all";batchSpiritFilter="all";batchLiqFilter="all";batchTasteFilter="all";shotSpiritFilter="all";shotLiqFilter="all";shotTasteFilter="all";wineVarietalFilter="all";wineBodyFilter="all";wineTanninFilter="all";wineSweetFilter="all";wineAcidFilter="all";wineAreaFilter="all";wineClassFilter="all";wineVenueFilter="all";spiritClassFilter="all";spiritSubclassFilter="all";spiritTypeFilter="all";spiritStyleFilter="all";spiritAgeFilter="all";spiritBodyFilter="all";spiritPowerFilter="all";spiritUseFilter="all";spiritNoteFilter="all";knowledgeSection="spirits";searchQuery="";sortMode="az";
+  shotFilter="all";WINE_F=Object.assign({},WINE_F_BLANK);syrupFCFilter="all";infFCFilter="all";infBaseFilter="all";infKindFilter="all";batchSpiritFilter="all";batchLiqFilter="all";batchTasteFilter="all";shotSpiritFilter="all";shotLiqFilter="all";shotTasteFilter="all";spiritClassFilter="all";spiritSubclassFilter="all";spiritTypeFilter="all";spiritStyleFilter="all";spiritAgeFilter="all";spiritBodyFilter="all";spiritPowerFilter="all";spiritUseFilter="all";spiritNoteFilter="all";knowledgeSection="spirits";searchQuery="";sortMode="az";
   document.getElementById("search").value="";
   document.getElementById("search-clear").classList.remove("visible");
   closeAll();buildFilters();render();
@@ -5044,7 +5055,9 @@ try{runValidator();}catch(e){console.warn("Validator failed to run",e);}
     var infCount=INF.length;
     var spiritCount=SP.length;
     var batchCount=BATCH.length;
-    el.textContent=cocktailCount+" cocktails, "+shotCount+" shots, "+wineCount+" wines/sake, "+syrupCount+" syrups, "+infCount+" infusions, "+spiritCount+" spirits, "+batchCount+" batches";
+    // Non-breaking space inside each count and before each dot, so a wrap only ever
+    // falls after a dot and never splits "37" from "syrups".
+    el.textContent=[cocktailCount+"\u00a0cocktails",shotCount+"\u00a0shots",wineCount+"\u00a0wines",syrupCount+"\u00a0syrups",infCount+"\u00a0infusions",spiritCount+"\u00a0spirits",batchCount+"\u00a0batches"].join("\u00a0\u00b7 ");
   }
 })();
 </script>
